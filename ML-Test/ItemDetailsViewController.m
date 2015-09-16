@@ -76,6 +76,7 @@
 //Present all the information into the scene
 -(void)fillTheItemFields:(NSDictionary *)dictionary {
     self.itemTitle.text = self.resultsDictionary[@"title"];
+    NSLog(@"%@", self.itemTitle.text);
     self.stock.text = [NSString stringWithFormat:@"%@ disponibles", [self.resultsDictionary[@"available_quantity"] stringValue]];
     self.location.text = [NSString stringWithFormat:@"%@", self.resultsDictionary[@"seller_address"][@"city"][@"name"]];
     self.itemSold.text = [NSString stringWithFormat:@"%@ vendidos", [self.resultsDictionary[@"sold_quantity"] stringValue]];
@@ -94,29 +95,42 @@
         [picturesId addObject:picturesDictionary[@"id"]];
     }
     
-    for (int i = 0; i < picturesId.count; i++){
-        NSString *idImage = picturesId[i];
-        NSString *urlString = [[NSString alloc]initWithFormat:@"https://api.mercadolibre.com/pictures/%@", idImage];
-        NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:urlString]];
-        NSOperationQueue *queue = [[NSOperationQueue alloc] init];
-        
-        //Send Async connection to load the 400x400 images
-        [NSURLConnection sendAsynchronousRequest:request queue:queue completionHandler:^(NSURLResponse *response, NSData *data, NSError *error)
-        {
-            if(data.length > 0 && error == nil){
-                NSError *error = nil;
-                NSString *picturesUrl = [NSString new];
-                NSDictionary *imageDictionary = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:&error];
-                for (NSMutableDictionary *picturesVariations in imageDictionary[@"variations"]){
-                    if ([picturesVariations[@"size"] isEqual:@"400x400"]) {
-                         picturesUrl =  picturesVariations[@"url"];
-                    }
-                }
-                
-                //Call the method to display the images into the UIScrollView
-                [self showImages:picturesUrl index:i];
-            }
-        }];
+    NSURLSessionConfiguration *sessionConfig = [NSURLSessionConfiguration defaultSessionConfiguration];
+    NSURLSession *session = [NSURLSession sessionWithConfiguration:sessionConfig
+                                                          delegate:self
+                                                     delegateQueue:nil];
+    
+    
+    for (int i=0; i < picturesId.count; i++){
+        NSString *urlString = [[NSString alloc] initWithFormat:@"https://api.mercadolibre.com/pictures/%@", picturesId[i]];
+        NSURLSessionDataTask *dataTask =
+        [session dataTaskWithURL:[NSURL URLWithString:urlString]
+               completionHandler:^(NSData *data,
+                                   NSURLResponse *response,
+                                   NSError *error) {
+                   if (!error) {
+                       NSHTTPURLResponse *httpResp = (NSHTTPURLResponse*) response;
+                       if (httpResp.statusCode == 200) {
+                           NSError *jsonError;
+                           NSDictionary *imageDictionary = [NSJSONSerialization JSONObjectWithData:data
+                                                                                           options:NSJSONReadingAllowFragments
+                                                                                             error:&jsonError];
+                           if (!jsonError) {
+                               for (NSMutableDictionary *picturesVariations in imageDictionary[@"variations"]){
+                                   if([picturesVariations[@"size"] isEqual:@"400x400"]){
+                                       NSString *picturesUrl = picturesVariations[@"url"];
+                                       //Call the method to display the images into the UIScrollView
+                                       [self showImages:picturesUrl index:i];
+                                   }
+                               }
+                           }
+                       }
+                   }
+                   else {
+                       NSLog(@"%@", error);
+                   }
+               }];
+        [dataTask resume];
     }
     
    self.imagesView.contentSize = CGSizeMake(self.imagesView.frame.size.width * picturesId.count, self.imagesView.frame.size.height);
